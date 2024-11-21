@@ -23,18 +23,47 @@ library(regclass)
 ## EDA
 
 ```{r}
-obesity <- read.csv("Data/Obesity.csv")
+obesity0 <- read.csv("Obesity.csv")
+```
+
+**Data Cleaning**
+There are many variables that are coded as numerical when in reality they should be a catagorical variable. Looking at the paper that this dataset goes with some variables should have a set number of catagories but some of the observations are coded as 1.0005 of 2.48. I have decide to just floor these numbers and then change the variable to a charector.
+
+```{r}
+hist(obesity0$FCVC)
+# Changing FCVC to catagorical
+obesity0$FCVC <- round(obesity0$FCVC)
+obesity0$FCVC <- as.factor(obesity0$FCVC)
+
+# The numbers that correspond with the Variable NCP do not align with what is outligned in the paper that corresponds with this data. I will remove this variable
+obesity0 <- subset(obesity0, select = -c(NCP))
+
+hist(obesity0$FAF)
+# Changing FAF to catagorical
+obesity0$FAF <- round(obesity0$FAF)
+obesity0$FAF <- as.factor(obesity0$FAF)
+
+hist(obesity0$CH2O)
+# Changing CH2O to catagorical
+obesity0$CH2O <- round(obesity0$CH2O)
+obesity0$CH2O <- as.factor(obesity0$CH2O)
+
+hist(obesity0$TUE)
+# Changing CH2O to catagorical
+obesity0$TUE <- round(obesity0$TUE)
+obesity0$TUE <- as.factor(obesity0$TUE)
 ```
 
 
 I want to calculate BMI to use as a target variable, this dataset is in metric units so to calculate BMI I will use the following formula. $BMI = \frac{\text{Weight in kg}}{(\text{Height in meters})^2}$
 ```{r}
 # I want to calculate BMI to use as a target variable
+obesity <- obesity0
 obesity$BMI <- obesity$Weight/(obesity$Height)^2
 
-# Since Height and weight were used in calculating BMI it would be repetitive to keep them in the dataset, therefore I will remove them
+# Since Height and weight were used in calculating BMI it would be repetitive to keep them in the dataset, therefore I will remove them, In addition obesity level (NObeyesdad) is calculated using height and weight so I will remove that as well
 
-obesity <- subset(obesity, select = -c(Height, Weight) )
+obesity <- subset(obesity, select = -c(Height, Weight, NObeyesdad) )
 
 # Checking for missing data
 sum(is.na(obesity)) # No missing data
@@ -42,28 +71,12 @@ sum(is.na(obesity)) # No missing data
 # I want to look at the unique values for each column
 # unique(obesity)
 ```
-```{r}
-# Lets make some plots
 
-# Boxplot of BMI by Obesity Level
-
-# I first want to order obesity level
-obesity$NObeyesdad <- factor(obesity$NObeyesdad , levels=c("Insufficient_Weight", "Normal_Weight", "Overweight_Level_I", "Overweight_Level_II", "Obesity_Type_I", "Obesity_Type_II", "Obesity_Type_III"))
-ggplot(obesity, aes(x = NObeyesdad, y = BMI)) +
-  geom_boxplot() +
-  labs(title = "BMI by Obesity Level",
-       x = "Obesity Level",
-       y = "BMI") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-```
-We can see that BMI increases as Obesity level increases.
 
 ```{r}
 #Let me check for multicolinearity
 mod <- lm(BMI~.,obesity)
 
-plot(mod,4) + abline(h=4/(2111-1-15))
 VIF(mod)
 # no immediate concerns about multicolinearity
 ```
@@ -78,16 +91,17 @@ ggplot(aes(x=Age, y=BMI), data = obesity) + geom_point()
 ```
 
 ```{r}
-mod_max <- lm(BMI~(.-NObeyesdad)*(.-NObeyesdad), obesity)
+mod_max <- lm(BMI~.*., obesity)
 summary(mod_max)
 ```
+
 ```{r}
 # Appears that we have many aliased terms so I will check that and remove any
 # We have quite a few aliased terms
 alias(mod_max) # I will remove these terms as the will cause warnings and potentially issues later on. 
 
-mod_max <- lm(BMI~.*. - Gender:CALC - Gender:MTRANS - Age:CALC - family_history_with_overweight:CALC - family_history_with_overweight:NObeyesdad - FAVC:CALC - FCVC:CALC - FCVC:NObeyesdad - NCP:CALC - NCP:MTRANS - NCP:NObeyesdad - CAEC:CALC - CAEC:MTRANS - CAEC:NObeyesdad - SMOKE:CALC - SMOKE:MTRANS - CH2O:CALC - SCC:CALC - SCC:MTRANS - SCC:NObeyesdad - FAF:CALC - TUE:CALC - TUE:MTRANS - CALC:MTRANS - CALC:NObeyesdad - MTRANS:NObeyesdad, obesity)
-#summary(mod_max)
+mod_max <- lm(BMI~.*. - Gender:CALC - Gender:MTRANS - Age:CALC - family_history_with_overweight:CALC  - FAVC:CALC - FCVC:CALC - CAEC:CALC - CAEC:SMOKE - CAEC:CH2O - CAEC:TUE - CAEC:MTRANS- SMOKE:CALC - SMOKE:MTRANS - CH2O:CALC - CH2O:MTRANS - SCC:CALC - FAF:CALC - FAF:MTRANS - TUE:CALC - TUE:MTRANS - CALC:MTRANS, obesity)
+summary(mod_max)
 ```
 
 ```{r}
@@ -108,6 +122,7 @@ bptest(mod_best)
 library(zoo)
 ks.test(rstandard(mod_best),"pnorm")
 ```
+
 ```{r}
 # The assumptions are not met but takes too long to run if I were to try a ton of different transformations so I will run a box cox test to see which transformation I should try
 
@@ -115,7 +130,7 @@ library(MASS)
 boxcox(mod_best)
 
 # lambda closes to .05 so i will do a sqrt transformation
-mod_max_sqrt <- lm(sqrt(BMI)~.*. - Gender:CALC - Gender:MTRANS - Age:CALC - family_history_with_overweight:CALC - family_history_with_overweight:NObeyesdad - FAVC:CALC - FCVC:CALC - FCVC:NObeyesdad - NCP:CALC - NCP:MTRANS - NCP:NObeyesdad - CAEC:CALC - CAEC:MTRANS - CAEC:NObeyesdad - SMOKE:CALC - SMOKE:MTRANS - CH2O:CALC - SCC:CALC - SCC:MTRANS - SCC:NObeyesdad - FAF:CALC - TUE:CALC - TUE:MTRANS - CALC:MTRANS - CALC:NObeyesdad - MTRANS:NObeyesdad, obesity)
+mod_max_sqrt <- lm(sqrt(BMI)~.*. - Gender:CALC - Gender:MTRANS - Age:CALC - family_history_with_overweight:CALC  - FAVC:CALC - FCVC:CALC - CAEC:CALC - CAEC:SMOKE - CAEC:CH2O - CAEC:TUE - CAEC:MTRANS- SMOKE:CALC - SMOKE:MTRANS - CH2O:CALC - CH2O:MTRANS - SCC:CALC - FAF:CALC - FAF:MTRANS - TUE:CALC - TUE:MTRANS - CALC:MTRANS, obesity)
 
 mod_best_sqrt <- step(mod_max_sqrt, direction = "both", trace = 0)
 ```
@@ -133,7 +148,7 @@ bptest(mod_best_sqrt)
 library(zoo)
 ks.test(rstandard(mod_best_sqrt),"pnorm")
 ```
-We are still having trouble meeting model assumptions. The goal of this project is to attempt to answer the question "What charectoristics of an individuals lifestyle are significant predictors of obesity". Attempting to use a linear regression model with BMI as our response may not accuratlt answer this quesion. Instead I will attempt to run a logistic regression model with the response being Obese or Not, as well as a proportional odds model.
+We are still having trouble meeting model assumptions. The goal of this project is to attempt to answer the question "What characteristics of an individuals lifestyle are significant predictors of obesity". Attempting to use a linear regression model with BMI as our response may not actually answer this question. Instead I will attempt to run a logistic regression model with the response being Obese or Not, as well as a proportional odds model. Though the sqrt transformation greatly decreased the AIC.
 
 
 
@@ -141,7 +156,7 @@ We are still having trouble meeting model assumptions. The goal of this project 
 
 
 ```{r}
-obesity_logistic <- obesity %>%
+obesity_logistic <- obesity0 %>%
   mutate(obese = ifelse(NObeyesdad %in% c("Insufficient_Weight", "Normal_Weight", "Overweight_Level_I", "Overweight_Level_II"), 0, 1))
 
 obesity_logistic <- subset(obesity_logistic, select = - NObeyesdad)
@@ -149,9 +164,10 @@ obesity_logistic <- subset(obesity_logistic, select = - NObeyesdad)
  mean(obesity_logistic$obese == 1) # roughly 50% split for the logisitc regression so I will continue
  
 ```
+
 ```{r}
-mod_log <- glm(obese ~ .  - SCC - BMI, data = obesity_logistic, family = binomial)
-summary(mod_log) # Algorithm did not converge will check for multicolinearity and remove variables if needed, found that there was near zero varinca in SCC and perfect seperation in BMI (Still had perfect seperation when i tested with just height and weight)
+mod_log <- glm(obese ~ .  - Height - Weight, data = obesity_logistic, family = binomial)
+summary(mod_log) # Algorithm did not converge will check for multicolinearity and remove variables if needed, found that there was  perfect seperation in Height and weight which akes sense as these were used to calculate obesity level.
 
 
 #VIF(mod_log)
@@ -163,11 +179,8 @@ While I have now solved the issue of convergence we still may have some variable
 ## PROPORTIONAL ODDS MODEL
 
 ```{r}
-# I want to test this with the original dataset
-obesity_0 <- read.csv("Data/Obesity.csv")
 
-
-obesity_po <- obesity_0 %>%
+obesity_po <- obesity0 %>%
   mutate(obese = ifelse(NObeyesdad %in% c("Insufficient_Weight"), "Insufficient_Weight", ifelse(NObeyesdad %in% c("Normal_Weight"), "Normal_Weight", ifelse(NObeyesdad %in% c("Overweight_Level_I", "Overweight_Level_II"),"Overweight","Obese"))))
 
 obesity_po$obese.order <- factor(obesity_po$obese,
@@ -184,7 +197,7 @@ obesity_po <- subset(obesity_po, select = -c(NObeyesdad,obese))
 
 
     mod.fit.ord <- 
-      polr(formula = obese.order ~ . - Height - Weight - SCC,
+      polr(formula = obese.order ~ . - Height - Weight,
            data = obesity_po, method = "logistic")
     #class(mod.fit.ord)
     summary(mod.fit.ord)
@@ -194,30 +207,19 @@ obesity_po <- subset(obesity_po, select = -c(NObeyesdad,obese))
   
 brant(mod.fit.ord)
 
-obesity_po$Gender <- as.factor(obesity_po$Gender)
-obesity_po$family_history_with_overweight <- as.factor(obesity_po$family_history_with_overweight)
-obesity_po$FAVC <- as.factor(obesity_po$FAVC)
-obesity_po$CAEC <- as.factor(obesity_po$CAEC)
-obesity_po$SMOKE <- as.factor(obesity_po$SMOKE)
-obesity_po$SCC <- as.factor(obesity_po$SCC)
-obesity_po$CALC<- as.factor(obesity_po$CALC)
-obesity_po$MTRANS <- as.factor(obesity_po$MTRANS)
 
-cor_matrix <- cor(obesity_po[, sapply(obesity_po, is.numeric)], use = "complete.obs")
-
-
-nearZeroVar(obesity_po, saveMetrics = TRUE)
-
-mod.fit.po <- vglm(formula = obese.order ~ . - Height - Weight - SCC,
-                       family = cumulative(parallel = TRUE), data = obesity_po)
-mod.fit.npo <- vglm(formula = obese.order ~ . - Height - Weight - SCC,
-                        family = cumulative(parallel = FALSE), data = obesity_po)
- 
-lrtest(mod.fit.npo, mod.fit.po)
+#nearZeroVar(obesity_po, saveMetrics = TRUE) # Saw that variables with near zero variance may cause problems (SCC, SMOKE)
 ```
 
 
 
+```{r}
+AIC(mod_best)
+AIC(mod_best_sqrt)
+AIC(mod_log)
+AIC(mod.fit.ord)
+```
+Logistic model has best AIC though none are great.
 
 
 
