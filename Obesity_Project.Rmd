@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 library(ggplot2)
 library(dplyr)
 library(package = MASS)
@@ -18,6 +18,8 @@ library(car)
 library(caret)
 library(VGAM)
 library(regclass)
+library(tidyr)
+library(glmnet)
 ```
 
 ## EDA
@@ -26,36 +28,41 @@ library(regclass)
 obesity0 <- read.csv("Obesity.csv")
 ```
 
-**Data Cleaning**
-There are many variables that are coded as numerical when in reality they should be a catagorical variable. Looking at the paper that this dataset goes with some variables should have a set number of catagories but some of the observations are coded as 1.0005 of 2.48. I have decide to just floor these numbers and then change the variable to a charector.
+**Data Cleaning** There are many variables that are coded as numerical when in reality they should be a catagorical variable. Looking at the paper that this dataset goes with some variables should have a set number of categories but some of the observations are coded as 1.0005 of 2.48. I have decide to just floor these numbers and then change the variable to a character.
 
 ```{r}
 hist(obesity0$FCVC)
-# Changing FCVC to catagorical
+# Changing FCVC to categorical
 obesity0$FCVC <- round(obesity0$FCVC)
 obesity0$FCVC <- as.factor(obesity0$FCVC)
 
-# The numbers that correspond with the Variable NCP do not align with what is outligned in the paper that corresponds with this data. I will remove this variable
-obesity0 <- subset(obesity0, select = -c(NCP))
+hist(obesity0$NCP)
+# Changing FCVC to categorical
+obesity0$NCP <- round(obesity0$NCP)
+obesity0$NCP <- as.factor(obesity0$NCP)
 
 hist(obesity0$FAF)
-# Changing FAF to catagorical
+# Changing FAF to categorical
 obesity0$FAF <- round(obesity0$FAF)
 obesity0$FAF <- as.factor(obesity0$FAF)
 
 hist(obesity0$CH2O)
-# Changing CH2O to catagorical
+# Changing CH2O to categorical
 obesity0$CH2O <- round(obesity0$CH2O)
 obesity0$CH2O <- as.factor(obesity0$CH2O)
 
 hist(obesity0$TUE)
-# Changing CH2O to catagorical
+# Changing CH2O to categorical
 obesity0$TUE <- round(obesity0$TUE)
 obesity0$TUE <- as.factor(obesity0$TUE)
 ```
 
+```{r}
+obesity0$CAEC <- factor(obesity0$CAEC, levels = c("no", "Sometimes", "Frequently", "Always"))
+```
 
 I want to calculate BMI to use as a target variable, this dataset is in metric units so to calculate BMI I will use the following formula. $BMI = \frac{\text{Weight in kg}}{(\text{Height in meters})^2}$
+
 ```{r}
 # I want to calculate BMI to use as a target variable
 obesity <- obesity0
@@ -71,7 +78,6 @@ sum(is.na(obesity)) # No missing data
 # I want to look at the unique values for each column
 # unique(obesity)
 ```
-
 
 ```{r}
 #Let me check for multicolinearity
@@ -92,15 +98,15 @@ ggplot(aes(x=Age, y=BMI), data = obesity) + geom_point()
 
 ```{r}
 mod_max <- lm(BMI~.*., obesity)
-summary(mod_max)
+# summary(mod_max)
 ```
 
 ```{r}
 # Appears that we have many aliased terms so I will check that and remove any
 # We have quite a few aliased terms
-alias(mod_max) # I will remove these terms as the will cause warnings and potentially issues later on. 
+#alias(mod_max) # I will remove these terms as the will cause warnings and potentially issues later on. 
 
-mod_max <- lm(BMI~.*. - Gender:CALC - Gender:MTRANS - Age:CALC - family_history_with_overweight:CALC  - FAVC:CALC - FCVC:CALC - CAEC:CALC - CAEC:SMOKE - CAEC:CH2O - CAEC:TUE - CAEC:MTRANS- SMOKE:CALC - SMOKE:MTRANS - CH2O:CALC - CH2O:MTRANS - SCC:CALC - FAF:CALC - FAF:MTRANS - TUE:CALC - TUE:MTRANS - CALC:MTRANS, obesity)
+mod_max <- lm(BMI~.*. - Gender:CALC - Gender:MTRANS - Age:CALC - family_history_with_overweight:CALC  - FAVC:CALC - FCVC:CALC - CAEC:CALC - CAEC:SMOKE - CAEC:CH2O - CAEC:TUE - CAEC:MTRANS- SMOKE:CALC - SMOKE:MTRANS - CH2O:CALC - CH2O:MTRANS - SCC:CALC - FAF:CALC - FAF:MTRANS - TUE:CALC - TUE:MTRANS - CALC:MTRANS - NCP:CAEC - NCP:SMOKE - NCP:CALC - NCP:MTRANS, obesity)
 summary(mod_max)
 ```
 
@@ -112,7 +118,6 @@ mod_best <- step(mod_max, direction = "both", trace = 0)
 ```{r}
 summary(mod_best)
 ```
-
 
 ```{r}
 plot(mod_best,1)
@@ -139,7 +144,6 @@ mod_best_sqrt <- step(mod_max_sqrt, direction = "both", trace = 0)
 summary(mod_best_sqrt)
 ```
 
-
 ```{r}
 plot(mod_best_sqrt,1)
 plot(mod_best_sqrt,2)
@@ -148,12 +152,10 @@ bptest(mod_best_sqrt)
 library(zoo)
 ks.test(rstandard(mod_best_sqrt),"pnorm")
 ```
+
 We are still having trouble meeting model assumptions. The goal of this project is to attempt to answer the question "What characteristics of an individuals lifestyle are significant predictors of obesity". Attempting to use a linear regression model with BMI as our response may not actually answer this question. Instead I will attempt to run a logistic regression model with the response being Obese or Not, as well as a proportional odds model. Though the sqrt transformation greatly decreased the AIC.
 
-
-
 ## Logistic Regression
-
 
 ```{r}
 obesity_logistic <- obesity0 %>%
@@ -174,7 +176,76 @@ summary(mod_log) # Algorithm did not converge will check for multicolinearity an
 ```
 
 
-While I have now solved the issue of convergence we still may have some variables perfectly splitting the data (however the package detect separation did not detect any). I believe a better model would be a proportional odds model.
+```{r}
+# Regression line
+library(stringr)
+reg_line <- function(model){
+  est_abs <- abs(as.numeric(coef(model)))
+  est <- as.numeric(coef(model))
+  var <- names(coef(model))
+  var <- str_replace(var, ":", "*X_") 
+  var <- str_replace(var, "I\\(", "(") 
+  
+  line <- paste0("hat_logit(Pi) = ", round(est[1], 2), " + ")
+  for (i in 2:length(est)){
+    est_i <- round(est_abs[i], 6)
+    var_i <- var[i]
+    
+    if (i != length(est) & est[i+1] >=0){
+      line <- paste0(line, est_i, "X_", var_i, " + ")
+    }
+    if (i != length(est) & est[i+1] <0){
+      line <- paste0(line, est_i, "X_", var_i, " - ")
+    }
+    if(i == length(est)) {line <- paste0(line, est_i, "X_", var_i)}
+  
+    
+  }
+  return(line)
+}
+
+reg_line(mod_log)
+```
+
+$$logit(\hat{P_i}) = -15.71 + 0.175251X_{GenderMale} + 0.083871X_{Age} + 2.257041X_{FAVCyes} +\\
+3.602642X_{family-history-with-overweightyes}  -
+0.575719X_{FCVC2} + 0.323034X_{FCVC3} \\+ 0.036985X_{NCP2} + 0.568739X_{NCP3} - 1.935938X_{NCP4} + 1.408404X_{CAECSometimes} \\- 1.953473X_{CAECFrequently} + 0.187588X_{CAECAlways} + 0.702136X_{SMOKEyes} - 0.273147X_{CH2O2} +\\ 0.341513X_{CH2O3} - 2.15783X_{SCCyes} - 0.295908X_{FAF1} - 0.155236X_{FAF2} - 1.006199X_{FAF3}\\ - 0.07564X_{TUE1} - 0.342273X_{TUE2} + 5.384153X_{CALCFrequently}  + 6.200647X_{CALCSometimes} \\+ 6.255396X_{CALCno} + 0.233013X_{MTRANSBike} + 1.948883X_{MTRANSMotorbike}\\ + 1.165961X_{MTRANSPublic-Transportation} - 1.215719X_{MTRANSWalking}$$
+
+Lets check the assumptions
+
+```{r}
+# Used this source for code on checking logistic regression assumptions 
+# https://bookdown.org/sarahwerth2024/CategoricalBook/logistic-regression-r.html#step-4-check-your-assumptions-3
+
+df_model <- subset(obesity_logistic, select = Age) # enter numeric variables 
+
+# save names of predictors to plug into command below. 
+predictors <- colnames(df_model) 
+
+# Save predicted probabilities
+df_model$probabilities <- mod_log$fitted.values
+
+# Manually calculate the logit values and tidy data for the plot
+df_model <- df_model %>%
+  mutate(logit = log(probabilities/(1-probabilities))) %>%
+  dplyr::select(-probabilities) %>% 
+  gather(key = "predictors", value = "predictor.value", -logit)
+
+# Checking if log-odds of response has a linear relationship with numerical predictors (Age)
+ggplot(df_model, aes(y = logit, x = predictor.value))+
+  geom_point(size = 0.5, alpha = 0.5) +
+  geom_smooth(method = "loess") + 
+  theme_bw() + 
+  facet_wrap(~predictors, scales = "free_x")
+# Looks okay
+
+# I am assuming indepence of errors
+
+# No concern for multicolinearity
+VIF(mod_log)
+```
+
+The logistic regression model did not cause any major issues and assumptions are met. This model is better than the"best" model we previously created. However, I would like to check the fit of a proportional odds model.
 
 ## PROPORTIONAL ODDS MODEL
 
@@ -211,7 +282,7 @@ brant(mod.fit.ord)
 #nearZeroVar(obesity_po, saveMetrics = TRUE) # Saw that variables with near zero variance may cause problems (SCC, SMOKE)
 ```
 
-
+Proportional odds assumption is not met, therefore I believe that the logistic regression model is the best out of all I have tested.
 
 ```{r}
 AIC(mod_best)
@@ -219,9 +290,30 @@ AIC(mod_best_sqrt)
 AIC(mod_log)
 AIC(mod.fit.ord)
 ```
+
 Logistic model has best AIC though none are great.
 
+## LASSO
 
+Lets try doing LASSO for variable selection to find the most statistically significant explanatory variables.
 
+```{r}
+obesity_LASSO <- obesity0
+obesity_LASSO$BMI <- obesity_LASSO$Weight/(obesity_LASSO$Height)^2
+obesity_LASSO <- subset(obesity_LASSO, select = -c(NObeyesdad, Height, Weight))
 
+X <- model.matrix(BMI~., obesity_LASSO)
+y <- obesity_LASSO$BMI
 
+# LASSO
+set.seed(123)
+lam_lasso <- cv.glmnet(x=X, y=y, nfolds=5, alpha=1) # Alpha=1 means preforming LASSO
+plot(lam_lasso) # Plots the MSPE across different values of lambda
+
+(lambda_lasso <- lam_lasso$lambda.min) # lambda that minimizes the MSPE
+
+mod_lasso <- glmnet(x=X,y=y, lambda=lambda_lasso,alpha=1, intercept=TRUE)
+mod_lasso$beta # anything with a dot next to it is zero
+```
+
+(The following interpretation depends on the seed, some seeds removed a few variables, otheres removed none). We see that most predictors are significant predictors of BMI. The only ones that are not are CH2O 2 meaning an individual consumes between 1 and 2 Liters of water daily, and CALC Frequently meaning an indivindual frequently consumes alcholhol. Because most variables are still significant I dont believe this would have an effect on any of my previous models.
