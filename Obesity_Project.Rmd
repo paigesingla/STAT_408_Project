@@ -28,7 +28,7 @@ library(glmnet)
 obesity0 <- read.csv("Obesity.csv")
 ```
 
-**Data Cleaning** There are many variables that are coded as numerical when in reality they should be a catagorical variable. Looking at the paper that this dataset goes with some variables should have a set number of categories but some of the observations are coded as 1.0005 of 2.48. I have decide to just floor these numbers and then change the variable to a character.
+**Data Cleaning** There are many variables that are coded as numerical when in reality they should be a catagorical variable. Looking at the paper that this dataset goes with some variables should have a set number of categories but some of the observations are coded as 1.0005 of 2.48. I have decided to just floor these numbers and then change the variable to a character.
 
 ```{r}
 hist(obesity0$FCVC)
@@ -239,7 +239,7 @@ ggplot(df_model, aes(y = logit, x = predictor.value))+
   facet_wrap(~predictors, scales = "free_x")
 # Looks okay
 
-# I am assuming indepence of errors
+# I am assuming independence of errors
 
 # No concern for multicolinearity
 VIF(mod_log)
@@ -261,25 +261,15 @@ obesity_po <- subset(obesity_po, select = -c(NObeyesdad,obese))
 
 
 
-# Again getting errors in convergence and fitted probabilities
-# obesity_po[, sapply(obesity_po, is.numeric)] <-
-#   scale(obesity_po[, sapply(obesity_po, is.numeric)])
-
-
 
     mod.fit.ord <- 
       polr(formula = obese.order ~ . - Height - Weight,
            data = obesity_po, method = "logistic")
-    #class(mod.fit.ord)
-    summary(mod.fit.ord)
-    AIC(mod.fit.ord)
-    Anova(mod.fit.ord)
+
          
   
 brant(mod.fit.ord)
 
-
-#nearZeroVar(obesity_po, saveMetrics = TRUE) # Saw that variables with near zero variance may cause problems (SCC, SMOKE)
 ```
 
 Proportional odds assumption is not met, therefore I believe that the logistic regression model is the best out of all I have tested.
@@ -316,4 +306,4 @@ mod_lasso <- glmnet(x=X,y=y, lambda=lambda_lasso,alpha=1, intercept=TRUE)
 mod_lasso$beta # anything with a dot next to it is zero
 ```
 
-(The following interpretation depends on the seed, some seeds removed a few variables, otheres removed none). We see that most predictors are significant predictors of BMI. The only ones that are not are CH2O 2 meaning an individual consumes between 1 and 2 Liters of water daily, and CALC Frequently meaning an indivindual frequently consumes alcholhol. Because most variables are still significant I dont believe this would have an effect on any of my previous models.
+(The following interpretation depends on the seed, some seeds removed a few variables, others removed none). We see that most predictors are significant predictors of BMI. The only ones that are not are CH2O 2 meaning an individual consumes between 1 and 2 Liters of water daily, and CALC Frequently meaning an individual frequently consumes alcohol. Because most variables are still significant I don't believe this would have an effect on any of my previous models.
